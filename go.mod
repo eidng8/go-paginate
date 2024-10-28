@@ -1,4 +1,4 @@
-module eidng8/go-paginate
+module github.com/eidng8/go-paginate
 
 go 1.23.2
 
