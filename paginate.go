@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/http"
 	"net/url"
 
 	"github.com/gin-gonic/gin"
@@ -109,7 +110,7 @@ func GetPage[I any, Q any, T PQ[I, Q]](
 	ni := params.Page + 1
 	pi := params.Page - 1
 	from := pi*params.PerPage + 1
-	u := gc.Request.URL
+	req := gc.Request
 	count, err := query.Count(ctx)
 	if err != nil {
 		return nil, err
@@ -121,28 +122,26 @@ func GetPage[I any, Q any, T PQ[I, Q]](
 		return nil, err
 	}
 	li := int(math.Ceil(float64(count) / float64(params.PerPage)))
-	first := PageUrlString(u, fi, params.PerPage)
+	first := NewPageUrl(req, fi, params.PerPage).String()
 	var last string
 	if li <= 1 {
 		li = 1
 		last = ""
 	} else {
-		last = PageUrlString(u, li, params.PerPage)
+		last = NewPageUrl(req, li, params.PerPage).String()
 	}
 	if ni >= li {
 		ni = li
 		next = ""
 	} else {
-		next = PageUrlString(u, ni, params.PerPage)
+		next = NewPageUrl(req, ni, params.PerPage).String()
 	}
 	if pi <= 1 {
 		pi = 1
 		prev = ""
 	} else {
-		prev = PageUrlString(u, pi, params.PerPage)
+		prev = NewPageUrl(req, pi, params.PerPage).String()
 	}
-	path := *u
-	path.RawQuery = ""
 	return &PaginatedList[I]{
 		Total:        count,
 		PerPage:      params.PerPage,
@@ -152,7 +151,7 @@ func GetPage[I any, Q any, T PQ[I, Q]](
 		LastPageUrl:  last,
 		NextPageUrl:  next,
 		PrevPageUrl:  prev,
-		Path:         path.String(),
+		Path:         GetRequestBase(req).String(),
 		From:         from,
 		To:           params.Page * params.PerPage,
 		Data:         rows,
@@ -191,14 +190,27 @@ func GetPageMapped[I any, V any, Q any, T PQ[I, Q]](
 	}, nil
 }
 
-func NewPageUrl(req *url.URL, page int, perPage int) *url.URL {
-	nu := *req
-	nu.RawQuery = SetPageQuery(req, page, perPage).Encode()
-	return &nu
+func GetRequestBase(req *http.Request) *url.URL {
+	u := CopyRequestUrl(req)
+	u.RawQuery = ""
+	return u
 }
 
-func PageUrlString(req *url.URL, page int, perPage int) string {
-	return NewPageUrl(req, page, perPage).String()
+func CopyRequestUrl(req *http.Request) *url.URL {
+	u := *req.URL
+	u.Host = req.Host
+	if req.TLS != nil {
+		u.Scheme = "https"
+	} else {
+		u.Scheme = "http"
+	}
+	return &u
+}
+
+func NewPageUrl(req *http.Request, page int, perPage int) *url.URL {
+	nu := CopyRequestUrl(req)
+	nu.RawQuery = SetPageQuery(nu, page, perPage).Encode()
+	return nu
 }
 
 func SetPageQuery(req *url.URL, page int, perPage int) url.Values {
