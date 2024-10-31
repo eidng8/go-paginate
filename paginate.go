@@ -130,13 +130,13 @@ func GetPage[I any, Q any, T PQ[I, Q]](
 	} else {
 		last = NewPageUrl(req, li, params.PerPage).String()
 	}
-	if ni >= li {
+	if ni > li {
 		ni = li
 		next = ""
 	} else {
 		next = NewPageUrl(req, ni, params.PerPage).String()
 	}
-	if pi <= 1 {
+	if pi < 1 {
 		pi = 1
 		prev = ""
 	} else {
@@ -190,14 +190,12 @@ func GetPageMapped[I any, V any, Q any, T PQ[I, Q]](
 	}, nil
 }
 
-// GetRequestBase returns the fully qualified URL of the request without the query string.
 func GetRequestBase(req *http.Request) *url.URL {
 	u := CopyRequestUrl(req)
 	u.RawQuery = ""
 	return u
 }
 
-// CopyRequestUrl returns a fully qualified copy of the request URL.
 func CopyRequestUrl(req *http.Request) *url.URL {
 	u := *req.URL
 	u.Host = req.Host
@@ -209,14 +207,12 @@ func CopyRequestUrl(req *http.Request) *url.URL {
 	return &u
 }
 
-// NewPageUrl returns a new fully qualified URL with the page and per_page query parameters set.
 func NewPageUrl(req *http.Request, page int, perPage int) *url.URL {
 	nu := CopyRequestUrl(req)
 	nu.RawQuery = SetPageQuery(nu, page, perPage).Encode()
 	return nu
 }
 
-// SetPageQuery sets the page and per_page query parameters.
 func SetPageQuery(req *url.URL, page int, perPage int) url.Values {
 	query := req.Query()
 	query.Set("page", fmt.Sprintf("%d", page))
