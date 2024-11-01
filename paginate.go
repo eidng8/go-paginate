@@ -115,6 +115,7 @@ func GetPage[I any, Q any, T PQ[I, Q]](
 	if err != nil {
 		return nil, err
 	}
+	to := int(math.Min(float64(params.Page*params.PerPage), float64(count)))
 	query.Offset(pi * params.PerPage)
 	query.Limit(params.PerPage)
 	rows, err := query.All(ctx)
@@ -153,7 +154,7 @@ func GetPage[I any, Q any, T PQ[I, Q]](
 		PrevPageUrl:  prev,
 		Path:         GetRequestBase(req).String(),
 		From:         from,
-		To:           params.Page * params.PerPage,
+		To:           to,
 		Data:         rows,
 	}, nil
 }
