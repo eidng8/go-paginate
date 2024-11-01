@@ -109,12 +109,28 @@ func GetPage[I any, Q any, T PQ[I, Q]](
 	fi := 1
 	ni := params.Page + 1
 	pi := params.Page - 1
-	from := pi*params.PerPage + 1
 	req := gc.Request
 	count, err := query.Count(ctx)
 	if err != nil {
 		return nil, err
 	}
+	if 0 == count {
+		return &PaginatedList[I]{
+			Total:        0,
+			PerPage:      params.PerPage,
+			CurrentPage:  1,
+			LastPage:     1,
+			FirstPageUrl: NewPageUrl(req, 1, params.PerPage).String(),
+			LastPageUrl:  "",
+			NextPageUrl:  "",
+			PrevPageUrl:  "",
+			Path:         GetRequestBase(req).String(),
+			From:         0,
+			To:           0,
+			Data:         []*I{},
+		}, nil
+	}
+	from := pi*params.PerPage + 1
 	to := int(math.Min(float64(params.Page*params.PerPage), float64(count)))
 	query.Offset(pi * params.PerPage)
 	query.Limit(params.PerPage)
