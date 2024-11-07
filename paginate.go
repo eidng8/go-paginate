@@ -7,7 +7,16 @@ import (
 	"net/http"
 	"net/url"
 
+	eu "github.com/eidng8/go-url"
 	"github.com/gin-gonic/gin"
+)
+
+const (
+	// ParamPage is the query parameter name for the page number.
+	ParamPage = "page"
+
+	// ParamPerPage is the query parameter name for the number of items per page.
+	ParamPerPage = "per_page"
 )
 
 // PaginatedParams is a struct that contains the page and per_page parameters.
@@ -98,24 +107,32 @@ type PQ[I any, Q any] interface {
 	All(context.Context) ([]*I, error)
 }
 
-// GetPage returns a paginated list of items. `I` is the type of items in the
+// GetPage returns a paginated list of items. `V` is the type of items in the
 // paginated list. `Q` is the query type to be used to retrieve items, which in
-// most cases can be inferred. So in most cases, only the `I` needs to be
+// most cases can be inferred. So in most cases, only the `V` needs to be
 // provided.
-func GetPage[I any, Q any, T PQ[I, Q]](
-	gc *gin.Context, ctx context.Context, query T, params PaginatedParams,
-) (*PaginatedList[I], error) {
+//
+// The `gc` parameter is the gin.Context to be used to generate various links in
+// the paginated list; `qc` is the context to be used in query execution;
+// `query` is the ent query instance to be executed; and `params` is the
+// PaginatedParams to be used in pagination.
+//
+// Please remember to explicitly add the `ORDER` clause to the query before
+// calling this function.
+func GetPage[V any, Q any, T PQ[V, Q]](
+	gc *gin.Context, qc context.Context, query T, params PaginatedParams,
+) (*PaginatedList[V], error) {
 	var next, prev string
 	fi := 1
 	ni := params.Page + 1
 	pi := params.Page - 1
 	req := gc.Request
-	count, err := query.Count(ctx)
+	count, err := query.Count(qc)
 	if err != nil {
 		return nil, err
 	}
 	if 0 == count {
-		return &PaginatedList[I]{
+		return &PaginatedList[V]{
 			Total:        0,
 			PerPage:      params.PerPage,
 			CurrentPage:  1,
@@ -124,17 +141,17 @@ func GetPage[I any, Q any, T PQ[I, Q]](
 			LastPageUrl:  "",
 			NextPageUrl:  "",
 			PrevPageUrl:  "",
-			Path:         GetRequestBase(req).String(),
+			Path:         eu.RequestBaseUrl(req).String(),
 			From:         0,
 			To:           0,
-			Data:         []*I{},
+			Data:         []*V{},
 		}, nil
 	}
 	from := pi*params.PerPage + 1
 	to := int(math.Min(float64(params.Page*params.PerPage), float64(count)))
 	query.Offset(pi * params.PerPage)
 	query.Limit(params.PerPage)
-	rows, err := query.All(ctx)
+	rows, err := query.All(qc)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +176,7 @@ func GetPage[I any, Q any, T PQ[I, Q]](
 	} else {
 		prev = UrlWithPage(req, pi, params.PerPage).String()
 	}
-	return &PaginatedList[I]{
+	return &PaginatedList[V]{
 		Total:        count,
 		PerPage:      params.PerPage,
 		CurrentPage:  params.Page,
@@ -168,7 +185,7 @@ func GetPage[I any, Q any, T PQ[I, Q]](
 		LastPageUrl:  last,
 		NextPageUrl:  next,
 		PrevPageUrl:  prev,
-		Path:         GetRequestBase(req).String(),
+		Path:         eu.RequestBaseUrl(req).String(),
 		From:         from,
 		To:           to,
 		Data:         rows,
@@ -179,11 +196,21 @@ func GetPage[I any, Q any, T PQ[I, Q]](
 // returned by the query, `V` is the type of items in the paginated list. `Q` is
 // the query type to be used to retrieve items, which in most cases can be
 // inferred. So in most cases, only the `I` and `V` types need to be provided.
+//
+// The `gc` parameter is the gin.Context to be used to generate various links in
+// the paginated list; `qc` is the context to be used in query execution;
+// `query` is the ent query instance to be executed; and `params` is the
+// PaginatedParams to be used in pagination; the `mapper` is a function that
+// maps the one query result row to an item in the paginated list, the 2nd
+// parameter is the index of the item in the result set.
+//
+// Please remember to explicitly add the `ORDER` clause to the query before
+// calling this function.
 func GetPageMapped[I any, V any, Q any, T PQ[I, Q]](
-	gc *gin.Context, ctx context.Context, query T, page PaginatedParams,
+	gc *gin.Context, qc context.Context, query T, page PaginatedParams,
 	mapper func(*I, int) *V,
 ) (*PaginatedList[V], error) {
-	list, err := GetPage[I, Q, T](gc, ctx, query, page)
+	list, err := GetPage[I, Q, T](gc, qc, query, page)
 	if err != nil {
 		return nil, err
 	}
@@ -207,30 +234,21 @@ func GetPageMapped[I any, V any, Q any, T PQ[I, Q]](
 	}, nil
 }
 
-func GetRequestBase(req *http.Request) *url.URL {
-	u := *req.URL
-	u.RawQuery = ""
-	return &u
+// UrlWithPage returns a URL with the page and per_page query parameters set.
+func UrlWithPage(request *http.Request, page int, perPage int) *url.URL {
+	return eu.RequestUrlWithQueryParams(request, PageQueryParams(page, perPage))
 }
 
-func UrlWithPage(req *http.Request, page int, perPage int) *url.URL {
-	nu := *req.URL
-	nu.RawQuery = SetPageQuery(&nu, page, perPage).Encode()
-	return &nu
-}
-
+// UrlWithoutPageParams returns a URL without the page and per_page query
+// parameters.
 func UrlWithoutPageParams(req *http.Request) *url.URL {
-	nu := *req.URL
-	query := nu.Query()
-	query.Del("page")
-	query.Del("per_page")
-	nu.RawQuery = query.Encode()
-	return &nu
+	return eu.RequestUrlWithoutQueryParams(req, ParamPage, ParamPerPage)
 }
 
-func SetPageQuery(req *url.URL, page int, perPage int) url.Values {
-	query := req.Query()
-	query.Set("page", fmt.Sprintf("%d", page))
-	query.Set("per_page", fmt.Sprintf("%d", perPage))
-	return query
+// PageQueryParams sets the page and per_page query parameters.
+func PageQueryParams(page int, perPage int) map[string]string {
+	params := make(map[string]string, 2)
+	params[ParamPage] = fmt.Sprintf("%d", page)
+	params[ParamPerPage] = fmt.Sprintf("%d", perPage)
+	return params
 }
